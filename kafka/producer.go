@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
@@ -8,12 +9,15 @@ import (
 	logger "github.com/Financial-Times/go-logger/v2"
 	"github.com/Shopify/sarama"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel"
+
+	"go.opentelemetry.io/contrib/instrumentation/github.com/Shopify/sarama/otelsarama"
 )
 
 const errProducerNotConnected = "producer is not connected to Kafka"
 
 type Producer interface {
-	SendMessage(message FTMessage) error
+	SendMessage(ctx context.Context, message FTMessage) error
 	ConnectivityCheck() error
 	Shutdown()
 }
@@ -72,11 +76,13 @@ func NewPerseverantProducer(brokers string, topic string, config *sarama.Config,
 	return producer, nil
 }
 
-func (p *MessageProducer) SendMessage(message FTMessage) error {
-	_, _, err := p.producer.SendMessage(&sarama.ProducerMessage{
+func (p *MessageProducer) SendMessage(ctx context.Context, message FTMessage) error {
+	msg := &sarama.ProducerMessage{
 		Topic: p.topic,
 		Value: sarama.StringEncoder(message.Build()),
-	})
+	}
+	otel.GetTextMapPropagator().Inject(ctx, otelsarama.NewProducerMessageCarrier(msg))
+	_, _, err := p.producer.SendMessage(msg)
 	if err != nil {
 		p.logger.WithError(err).
 			WithField("method", "SendMessage").
@@ -134,7 +140,7 @@ func (p *perseverantProducer) isConnected() bool {
 	return p.producer != nil
 }
 
-func (p *perseverantProducer) SendMessage(message FTMessage) error {
+func (p *perseverantProducer) SendMessage(ctx context.Context, message FTMessage) error {
 	if !p.isConnected() {
 		return errors.New(errProducerNotConnected)
 	}
@@ -142,7 +148,7 @@ func (p *perseverantProducer) SendMessage(message FTMessage) error {
 	p.RLock()
 	defer p.RUnlock()
 
-	return p.producer.SendMessage(message)
+	return p.producer.SendMessage(ctx, message)
 }
 
 func (p *perseverantProducer) Shutdown() {

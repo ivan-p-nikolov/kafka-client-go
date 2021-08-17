@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
@@ -80,7 +81,7 @@ func TestNewPerseverantConsumer(t *testing.T) {
 	err = consumer.ConnectivityCheck()
 	assert.EqualError(t, err, errConsumerNotConnected)
 
-	consumer.StartListening(func(msg FTMessage) error { return nil })
+	consumer.StartListening(func(ctx context.Context, msg FTMessage) error { return nil })
 
 	err = consumer.ConnectivityCheck()
 	assert.NoError(t, err)
@@ -223,7 +224,7 @@ func TestMessageConsumer_StartListeningConsumerErrors(t *testing.T) {
 		}
 	}()
 
-	consumer.StartListening(func(msg FTMessage) error {
+	consumer.StartListening(func(ctx context.Context, msg FTMessage) error {
 		atomic.AddInt32(&count, 1)
 		return nil
 	})
@@ -255,7 +256,7 @@ func TestMessageConsumer_StartListeningHandlerErrors(t *testing.T) {
 		}
 	}()
 
-	consumer.StartListening(func(msg FTMessage) error {
+	consumer.StartListening(func(ctx context.Context, msg FTMessage) error {
 		atomic.AddInt32(&count, 1)
 		return expectedErrors[atomic.LoadInt32(&count)-1]
 	})
@@ -270,7 +271,7 @@ func TestMessageConsumer_StartListeningHandlerErrors(t *testing.T) {
 func TestMessageConsumer_StartListening(t *testing.T) {
 	var count int32
 	consumer := NewTestConsumer()
-	consumer.StartListening(func(msg FTMessage) error {
+	consumer.StartListening(func(ctx context.Context, msg FTMessage) error {
 		atomic.AddInt32(&count, 1)
 		return nil
 	})
@@ -281,7 +282,7 @@ func TestMessageConsumer_StartListening(t *testing.T) {
 func TestMessageConsumerContinuesWhenHandlerReturnsError(t *testing.T) {
 	var count int32
 	consumer := NewTestConsumer()
-	consumer.StartListening(func(msg FTMessage) error {
+	consumer.StartListening(func(ctx context.Context, msg FTMessage) error {
 		atomic.AddInt32(&count, 1)
 		return errors.New("test error")
 	})
@@ -292,7 +293,7 @@ func TestMessageConsumerContinuesWhenHandlerReturnsError(t *testing.T) {
 func TestPerseverantConsumerListensToConsumer(t *testing.T) {
 	var count int32
 	consumer := perseverantConsumer{consumer: NewTestConsumer()}
-	consumer.StartListening(func(msg FTMessage) error {
+	consumer.StartListening(func(ctx context.Context, msg FTMessage) error {
 		atomic.AddInt32(&count, 1)
 		return nil
 	})

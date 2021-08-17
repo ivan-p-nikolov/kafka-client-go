@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -21,8 +22,8 @@ type mockProducer struct {
 	mock.Mock
 }
 
-func (p *mockProducer) SendMessage(message FTMessage) error {
-	args := p.Called(message)
+func (p *mockProducer) SendMessage(ctx context.Context, message FTMessage) error {
+	args := p.Called(ctx, message)
 	return args.Error(0)
 }
 
@@ -77,7 +78,7 @@ func TestNewProducerBadUrl(t *testing.T) {
 
 func TestClient_SendMessage(t *testing.T) {
 	kc, _ := NewTestProducer(t, testBrokers, testTopic)
-	kc.SendMessage(NewFTMessage(nil, "Body"))
+	kc.SendMessage(context.TODO(), NewFTMessage(nil, "Body"))
 }
 
 func TestNewPerseverantProducer(t *testing.T) {
@@ -139,7 +140,7 @@ func TestPerseverantProducerForwardsToProducer(t *testing.T) {
 		Body: `{"foo":"bar"}`,
 	}
 
-	actual := p.SendMessage(msg)
+	actual := p.SendMessage(context.TODO(), msg)
 	assert.NoError(t, actual)
 
 	p.Shutdown()
@@ -157,6 +158,6 @@ func TestPerseverantProducerNotConnectedCannotSendMessages(t *testing.T) {
 		Body: `{"foo":"bar"}`,
 	}
 
-	actual := p.SendMessage(msg)
+	actual := p.SendMessage(context.TODO(), msg)
 	assert.EqualError(t, actual, errProducerNotConnected)
 }

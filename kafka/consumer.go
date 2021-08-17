@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	standardlog "log"
@@ -12,6 +13,11 @@ import (
 	"github.com/Financial-Times/kafka/consumergroup"
 	"github.com/Shopify/sarama"
 	"github.com/wvanbergen/kazoo-go"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/Shopify/sarama/otelsarama"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const errConsumerNotConnected = "consumer is not connected to Kafka"
@@ -25,7 +31,7 @@ type ConsumerGrouper interface {
 }
 
 type Consumer interface {
-	StartListening(messageHandler func(message FTMessage) error)
+	StartListening(messageHandler func(ctx context.Context, message FTMessage) error)
 	Shutdown()
 	ConnectivityCheck() error
 }
@@ -112,7 +118,7 @@ func NewPerseverantConsumer(zookeeperConnectionString string, consumerGroup stri
 	return consumer, nil
 }
 
-func (c *MessageConsumer) StartListening(messageHandler func(message FTMessage) error) {
+func (c *MessageConsumer) StartListening(messageHandler func(ctx context.Context, message FTMessage) error) {
 	go func() {
 		c.logger.Debug("Start listening for consumer errors")
 		for err := range c.consumer.Errors() {
@@ -129,9 +135,18 @@ func (c *MessageConsumer) StartListening(messageHandler func(message FTMessage) 
 	go func() {
 		for message := range c.consumer.Messages() {
 			c.logger.Debug("start listening for messages")
+			// Extract tracing info from message
+			ctx := otel.GetTextMapPropagator().Extract(context.Background(), otelsarama.NewConsumerMessageCarrier(message))
+
+			tr := otel.Tracer("consumer")
+			_, span := tr.Start(ctx, "consume message", trace.WithAttributes(
+				semconv.MessagingOperationProcess,
+				attribute.Array("topics", c.topics),
+			))
+			defer span.End()
 
 			ftMsg := rawToFTMessage(message.Value)
-			err := messageHandler(ftMsg)
+			err := messageHandler(ctx, ftMsg)
 			if err != nil {
 				c.logger.WithError(err).
 					WithField("method", "StartListening").
@@ -222,7 +237,7 @@ func (c *perseverantConsumer) isConnected() bool {
 	return c.consumer != nil
 }
 
-func (c *perseverantConsumer) StartListening(messageHandler func(message FTMessage) error) {
+func (c *perseverantConsumer) StartListening(messageHandler func(ctx context.Context, message FTMessage) error) {
 	if !c.isConnected() {
 		c.connect()
 	}
