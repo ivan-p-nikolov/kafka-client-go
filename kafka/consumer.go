@@ -139,7 +139,7 @@ func (c *MessageConsumer) StartListening(messageHandler func(ctx context.Context
 			ctx := otel.GetTextMapPropagator().Extract(context.Background(), otelsarama.NewConsumerMessageCarrier(message))
 
 			tr := otel.Tracer("consumer")
-			_, span := tr.Start(ctx, "consume message", trace.WithAttributes(
+			ctx, span := tr.Start(ctx, "consume message", trace.WithAttributes(
 				semconv.MessagingOperationProcess,
 				attribute.Array("topics", c.topics),
 			))
